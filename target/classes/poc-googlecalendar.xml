@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:google-calendar="http://www.mulesoft.org/schema/mule/google-calendar"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:slack="http://www.mulesoft.org/schema/mule/slack" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/slack http://www.mulesoft.org/schema/mule/slack/current/mule-slack.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/google-calendar http://www.mulesoft.org/schema/mule/google-calendar/current/mule-google-calendar.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<http:request-config name="HTTP_Request_SLACK_API_configuration" doc:name="HTTP Request configuration" doc:id="659e7846-9633-44cf-b6c3-697491ac4fce" >
+		<http:request-connection protocol="HTTPS" host="slack.com/api" />
+	</http:request-config>
+
+	<flow name="getToken-googlecalendar-flow" doc:id="4b7ad1ae-b880-4f06-b610-6d591c4dba75">
+		<http:listener doc:name="Listener" doc:id="c22cbae3-d982-4cf5-bc43-95091debca39" config-ref="HTTP_Listener_config" path="/token">
+			<http:response statusCode='#[vars.httpStatus default "200"]' />
+			<http:error-response statusCode='#[vars.httpStatus  default "500"]'>
+				<http:body><![CDATA[#[output application/json --- payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<logger level="INFO" doc:name="Logger ini flow.getToken-googlecalendar-flow" doc:id="01ea5863-b4ae-439b-b9b7-b9188d048709" message=" ini flow. getToken-googlecalendar-flow" />
+		<os:retrieve-all doc:name="Retrieve all" doc:id="513a7172-a9f7-453e-b6b2-f3bc60e47ea2" objectStore="Object_store"/>
+		<ee:transform doc:name="Transform to JSON" doc:id="7d69b716-55ba-4c01-ac00-7f693418b686" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger fin flow.getToken-googlecalendar-flow" doc:id="f56f6714-f29e-4d93-b804-6c964b9ed66d" message=" fin flow. getToken-googlecalendar-flow" />
+	</flow>
+	<flow name="events-lists-googlecalendar-flow" >
+		<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/events-list-googlecalendar/{calendarId}">
+			<http:response statusCode='#[vars.httpStatus default "200"]' />
+			<http:error-response statusCode='#[vars.httpStatus  default "500"]' >
+				<http:body ><![CDATA[#[output application/json --- payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<logger level="INFO" doc:name="Logger ini flow.events-lists-googlecalendar-flow" doc:id="4655f1c9-c845-4433-81a6-da8134df8e06" message=" ini flow. events-lists-googlecalendar-flow"/>
+		<flow-ref doc:name="eventList-googleCalendar-subFlow" doc:id="52c73c52-9af7-4d88-bc21-db942a850cfa" name="eventList-googleCalendar-subFlow"/>
+		<logger level="INFO" doc:name="Result" message="#[payload]"/>
+		<logger level="INFO" doc:name="Logger fin flow.events-lists-googlecalendar-flow" doc:id="a56f16b3-13e6-46b4-8882-af496211fbe5" message=" fin flow. events-lists-googlecalendar-flow" />
+		<error-handler ref="global-error-handler" />
+	
+</flow>
+	<flow name="send-message-to-SLACK-flow" doc:id="bad726bc-eda2-4440-bff6-bbb8f2e123b5" >
+		<http:listener doc:name="Listener" doc:id="0505a986-7873-47e4-bf41-d0853718937c" config-ref="HTTP_Listener_config" path="/send-message-withGoogleCalendars-to-SLACK/{calendarId}" >
+			<http:response statusCode='#[vars.httpStatus  default "200"]' />
+			<http:error-response statusCode='#[vars.httpStatus  default "500"]' >
+				<http:body ><![CDATA[#[output application/json --- payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<logger level="INFO" doc:name="Logger ini flow. send-message-to-channel-flow" doc:id="de54e61c-4e13-4a6e-b00e-a93ba1c991ea" message=" ini flow. send-message-to-channel-flow" />
+		<set-variable value="#[payload]" doc:name="originalPayload" doc:id="c564c815-02bb-4e4f-83df-eb4221abcf6e" variableName="originalPayload"/>
+		<ee:transform doc:name="timeMin, timeMax" doc:id="f094fd36-3020-49f8-a8fb-a7861f795685">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="timeMin"><![CDATA[if (!isEmpty(attributes.queryParams.'timeMin'))(
+	attributes.queryParams.'timeMin'
+) else (
+	now().year ++ "-" ++ now().month ++ "-" ++ (if(now().day < 10)("0" ++ now().day)else(now().day)) ++ "T07:00:00.000Z"
+)]]></ee:set-variable>
+				<ee:set-variable variableName="timeMax"><![CDATA[if (!isEmpty(attributes.queryParams.'timeMax'))(
+	attributes.queryParams.'timeMax'
+) else (
+	now().year ++ "-" ++ now().month ++ "-" ++ (if(now().day < 10)("0" ++ now().day)else(now().day)) ++ "T20:00:00.000Z"
+)]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="eventList-googleCalendar-subFlow" doc:id="83b4ef4d-cb74-4141-948c-48a277055fd6" name="eventList-googleCalendar-subFlow"/>
+		<set-variable value='#[output text/plain&#10;---&#10;((payload filter (!isEmpty($.summary)) map() -&gt; &#10;     $.summary) reduce ((item, accumulator) -&gt; item  ++ "\n :pushpin: " ++  accumulator))]' doc:name="listTasks" doc:id="80203a8a-61e7-4df2-8423-0ff07b2503ff" variableName="listTasks"/>
+		<set-variable value='#[(":dart: :alphabet-yellow-y: :alphabet-white-o: :alphabet-yellow-u: :alphabet-white-r:    :alphabet-yellow-t: :alphabet-white-a: :alphabet-yellow-s: :alphabet-white-k: :alphabet-yellow-s:    :alphabet-yellow-f: :alphabet-white-o: :alphabet-yellow-r:    :alphabet-yellow-t: :alphabet-white-o: :alphabet-yellow-d: :alphabet-white-a: :alphabet-yellow-y:    :alphabet-yellow-a: :alphabet-white-r: :alphabet-yellow-e:     : \n\n:pushpin: ") ++ vars.listTasks]' doc:name="text" doc:id="0ddabebb-14f7-4fb0-ac34-39228c3492c8" variableName="text"/>
+		<ee:transform doc:name="inputBody" doc:id="4ce50a69-9ce1-49bd-a184-a549c3259536" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="inputBody" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "channel"		: vars.originalPayload.channel,
+    ("text" 		: vars.text) if (!isEmpty(vars.text)),
+    ("as_user"		: vars.originalPayload.as_user) if (!isEmpty(vars.originalPayload.as_user)),
+    ("attachments"	: vars.originalPayload.attachments) if (!isEmpty(vars.originalPayload.attachments)),
+    ("blocks"		: vars.originalPayload.blocks) if (!isEmpty(vars.originalPayload.blocks)),
+    ("icon_emoji"	: vars.originalPayload.icon_emoji) if (!isEmpty(vars.originalPayload.icon_emoji)),
+    ("icon_url"		: vars.originalPayload.icon_url) if (!isEmpty(vars.originalPayload.icon_url)),
+    ("link_names"	: vars.originalPayload.link_names) if (!isEmpty(vars.originalPayload.link_names)),
+    ("metadata"		: vars.originalPayload.metadata) if (!isEmpty(vars.originalPayload.metadata)),
+    ("mrkdwn"		: vars.originalPayload.mrkdown) if (!isEmpty(vars.originalPayload.mrkdwn)),
+    ("username"		: vars.originalPayload.username) if (!isEmpty(vars.originalPayload.username))
+        
+
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<http:request method="POST" doc:name="Request send message" doc:id="aebaa78f-18dc-42d7-a706-5b03ba09861e" url="https://slack.com/api/chat.postMessage" sendBodyMode="AUTO" config-ref="HTTP_Request_SLACK_API_configuration">
+			<http:body ><![CDATA[#[vars.inputBody]]]></http:body>
+			<http:headers ><![CDATA[#[{
+	"Content-Type" : "application/json",
+	"Authorization" : "Bearer " ++ p('secure::http.request.slackapi.token')
+}]]]></http:headers>
+		</http:request>
+		<logger level="INFO" doc:name="Logger" doc:id="3a314286-be44-485c-821e-5baaf8e197d8" />
+		<logger level="INFO" doc:name="Logger fin flow. send-message-to-channel-flow" doc:id="f58d8354-ece1-4eaa-b29a-2e92f022ba8e" message="fin flow. send-message-to-channel-flow" />
+		<error-handler ref="global-error-handler" />
+	</flow>
+	<flow name="events-lists-googlecalendar-flow1" doc:id="6d560b60-3459-4380-aed9-f7b299317600" >
+		<http:listener doc:name="Listener" doc:id="18242b8f-224e-442d-9f56-853da0878c8e" config-ref="HTTP_Listener_config" path="/send-slack-events-list-googlecalendar/{calendarId}" >
+			<http:response statusCode='#[vars.httpStatus default "200"]' />
+			<http:error-response statusCode='#[vars.httpStatus  default "500"]' >
+				<http:body ><![CDATA[#[output application/json --- payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<logger level="INFO" doc:name="Logger ini flow.events-lists-googlecalendar-flow" doc:id="9228d7df-1aa4-47bd-9c61-6b3d13846fd2" message=" ini flow. events-lists-googlecalendar-flow" />
+		<flow-ref doc:name="eventList-googleCalendar-subFlow" doc:id="8a1e85a2-4b08-46b9-8507-bf01e02de6cb" name="eventList-googleCalendar-subFlow"/>
+		<logger level="INFO" doc:name="Result" doc:id="99a2a3e1-facb-44d1-9bbe-b85212463163" message="#[payload]" />
+		<logger level="INFO" doc:name="Logger fin flow.events-lists-googlecalendar-flow" doc:id="dd4dff25-ebdb-4a8f-841c-44020d22821a" message=" fin flow. events-lists-googlecalendar-flow" />
+		<error-handler ref="global-error-handler" />
+	</flow>
+	<flow name="eventList-googleCalendar-subFlow" doc:id="8a76c42e-ce00-4b2b-9848-6e0e8861afb7" >
+		<try doc:name="Try" doc:id="4156fd0f-a468-4a84-adcb-388d188d98fe" >
+			<google-calendar:get-calendars-events-by-calendar-id doc:name="Events list" doc:id="3c1b3aa6-805c-4bb2-89cf-bbbbcbcec1b4" config-ref="Google_Calendar_Connector_Config" calendarId="#[attributes.uriParams.'calendarId']" timeMin="#[vars.timeMin]" prettyPrint="true" timeMax="#[vars.timeMax]" />
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="ce063a30-7487-4213-a133-2a52b2f3013b" type="ANY" >
+					<logger level="INFO" doc:name="Logger" doc:id="b5664c00-c41d-46ab-a05b-ec7f618c6bcf" message="#[write(error,'application/json')]" />
+					<set-variable value="#[error.exception.errorMessage.payload.error.errors[0].message]" doc:name="errorDescription" doc:id="bae6f3a6-14f3-4c0d-a17f-09cc62a8fc62" variableName="errorDescription" />
+					<set-payload value="#[output application/json&#10;---&#10;error]" doc:name="Set Payload" doc:id="72dbd857-390a-46c6-87b0-ce16039988dd" />
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<ee:transform doc:name="Payload as Json" doc:id="3821b47f-d64c-4fe4-866e-74fc02fa241f">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<error-handler ref="global-error-handler" />
+	</flow>
+
+</mule>
